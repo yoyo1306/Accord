@@ -185,6 +185,7 @@ namespace AudioRename
             WriteProtectedValues(sub, name, description);
             WritePublishedName(device, name, description);
             RestartAudio();
+            ApplyMmsysName(device.Flow, device.Id, name, description);
         }
 
         public static DeviceBackup ReadSnapshot(AudioDevice device)
@@ -244,6 +245,23 @@ namespace AudioRename
                 }
             }
             RestartAudio();
+            ApplyMmsysName(backup.Flow, backup.Id, backup.Name, backup.Description);
+        }
+
+        static string QuotePs(string value)
+        {
+            if (value == null) value = "";
+            return value.Replace("\"", "").Replace("'", "''");
+        }
+
+        static void ApplyMmsysName(string flow, string id, string name, string description)
+        {
+            string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Restore-AudioNames.ps1");
+            string command = "& '" + QuotePs(script) + "' -MmsysOnly -Flow '" + QuotePs(flow) + "' -Id '" + QuotePs(id) + "' -Name '" + QuotePs(name) + "' -Description '" + QuotePs(description) + "'";
+            string args = "-NoProfile -ExecutionPolicy Bypass -Command \"" + command + "\"";
+            Process process = Process.Start("powershell.exe", args);
+            if (process == null || !process.WaitForExit(30000) || process.ExitCode != 0)
+                throw new InvalidOperationException("Le panneau Son n'a pas été mis à jour.");
         }
 
         static string PropertiesPath(string flow, string id)
@@ -716,6 +734,8 @@ namespace AudioRename
         readonly Button backupButton = new Button();
         readonly Button restoreButton = new Button();
         readonly Label status = new Label();
+        readonly CheckBox autoRestoreBox = new CheckBox();
+        readonly CheckBox autoSwitchBox = new CheckBox();
         List<AudioDevice> devices = new List<AudioDevice>();
         bool filling;
 
@@ -728,6 +748,13 @@ namespace AudioRename
         {
             Text = "Périphériques audio";
             Font = new Font("Segoe UI", 9f);
+            try
+            {
+                Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            }
+            catch (Exception)
+            {
+            }
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(860, 520);
             MinimumSize = new Size(720, 420);
@@ -753,7 +780,7 @@ namespace AudioRename
 
             var bottom = new Panel();
             bottom.Dock = DockStyle.Bottom;
-            bottom.Height = 146;
+            bottom.Height = 176;
 
             var nameLabel = new Label();
             nameLabel.Text = "Nom";
@@ -788,7 +815,7 @@ namespace AudioRename
             refreshButton.Click += delegate { Reload(SelectedId()); };
             bottom.Controls.Add(refreshButton);
 
-            backupButton.Text = "Backup";
+            backupButton.Text = "Sauvegarder";
             backupButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             backupButton.Size = new Size(110, 28);
             backupButton.Click += delegate { BackupSelected(); };
@@ -803,9 +830,27 @@ namespace AudioRename
             status.AutoSize = false;
             status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             status.TextAlign = ContentAlignment.MiddleLeft;
-            status.Location = new Point(12, 110);
+            status.Location = new Point(12, 140);
             status.Height = 22;
             bottom.Controls.Add(status);
+
+            autoSwitchBox.Text = "Bascule automatique du son";
+            autoSwitchBox.Location = new Point(12, 110);
+            autoSwitchBox.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            autoSwitchBox.AutoSize = false;
+            autoSwitchBox.Size = new Size(360, 24);
+            autoSwitchBox.Checked = RunTool("powershell.exe", SwitchArgs("-Query"), 15000) == 0;
+            autoSwitchBox.CheckedChanged += OnAutoSwitchChanged;
+            bottom.Controls.Add(autoSwitchBox);
+
+            autoRestoreBox.Text = "Restaurer la dernière sauvegarde au démarrage";
+            autoRestoreBox.Location = new Point(520, 110);
+            autoRestoreBox.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            autoRestoreBox.AutoSize = false;
+            autoRestoreBox.Size = new Size(330, 24);
+            autoRestoreBox.Checked = RunTool("schtasks.exe", "/Query /TN \"AudioRenameAutoRestore\"", 15000) == 0;
+            autoRestoreBox.CheckedChanged += OnAutoRestoreChanged;
+            bottom.Controls.Add(autoRestoreBox);
 
             bottom.Resize += delegate
             {
@@ -1007,6 +1052,57 @@ namespace AudioRename
             {
                 UseWaitCursor = false;
             }
+        }
+
+        static string SwitchArgs(string mode)
+        {
+            string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoAudioSwitch.ps1");
+            return "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + script + "\" " + mode;
+        }
+
+        static int RunTool(string file, string args, int timeout)
+        {
+            try
+            {
+                Process process = Process.Start(file, args);
+                if (process == null || !process.WaitForExit(timeout)) return -1;
+                return process.ExitCode;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        void OnAutoSwitchChanged(object sender, EventArgs e)
+        {
+            string mode = autoSwitchBox.Checked ? "-Enable" : "-Disable";
+            if (RunTool("powershell.exe", SwitchArgs(mode), 20000) == 0) return;
+            autoSwitchBox.CheckedChanged -= OnAutoSwitchChanged;
+            autoSwitchBox.Checked = !autoSwitchBox.Checked;
+            autoSwitchBox.CheckedChanged += OnAutoSwitchChanged;
+            MessageBox.Show(this, "La bascule automatique n'a pas pu être modifiée.", Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        void OnAutoRestoreChanged(object sender, EventArgs e)
+        {
+            string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Restore-AudioNames.ps1");
+            string args;
+            if (autoRestoreBox.Checked)
+            {
+                if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AudioRename.backup.txt")))
+                    MessageBox.Show(this, "Aucune sauvegarde pour l'instant. La restauration s'appliquera dès qu'il y en aura une.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                args = "/Create /TN \"AudioRenameAutoRestore\" /TR \"powershell.exe -NoProfile -ExecutionPolicy Bypass -File \\\"" + script + "\\\"\" /SC ONLOGON /DELAY 0000:15 /RL HIGHEST /F";
+            }
+            else
+            {
+                args = "/Delete /TN \"AudioRenameAutoRestore\" /F";
+            }
+            if (RunTool("schtasks.exe", args, 20000) == 0) return;
+            autoRestoreBox.CheckedChanged -= OnAutoRestoreChanged;
+            autoRestoreBox.Checked = !autoRestoreBox.Checked;
+            autoRestoreBox.CheckedChanged += OnAutoRestoreChanged;
+            MessageBox.Show(this, "La restauration au démarrage n'a pas pu être modifiée.", Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

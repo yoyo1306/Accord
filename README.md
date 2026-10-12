@@ -1,24 +1,48 @@
 # AudioRename
 
-Programme Windows pour lister les périphériques de lecture et d'enregistrement, y compris les désactivés et les déconnectés, et pour renommer les deux lignes affichées dans le panneau Son : le nom en gras et la description en gris.
+Renomme les périphériques audio de Windows, et garde ces noms. Le nom court apparaît dans la barre des tâches. La description est celle du panneau Son.
+
+![AudioRename](screenshot.png)
 
 ## Utilisation
 
-Lancer `AudioRename.exe`. Windows demande les droits administrateur, parce que ces noms sont stockés dans une clé du registre protégée.
+Lancer `AudioRename.exe`. Windows demande les droits administrateur : les noms sont dans une clé du registre protégée, et le service Audio est redémarré une seconde le temps d'écrire le nom du panneau Son.
 
-- Deux onglets : **Lecture** et **Enregistrement**.
-- Trois cases : **Actifs**, **Désactivés**, **Déconnectés**. Au lancement, seule **Actifs** est cochée.
-  - **Désactivés** : les appareils avec la flèche noire, marqués « Désactivé » dans Son.
-  - **Déconnectés** : les appareils avec la flèche rouge, marqués « Déconnecté » ou « Non connecté ».
-- Sélectionner un appareil, modifier **Nom** et **Description**, puis cliquer **Renommer**. Le service Audio Windows redémarre et le son est coupé une seconde.
+- **Lecture** et **Enregistrement**.
+- **Actifs**, **Désactivés**, **Déconnectés**. Au lancement, seule **Actifs** est cochée.
+- Sélectionner un appareil, modifier **Nom** et **Description**, puis **Renommer**.
+  - La barre des tâches affiche `Nom (Description)`.
+  - Le panneau Son affiche la description.
 - **Actualiser** relit la liste.
-- **Backup** enregistre le nom actuel de l'appareil sélectionné dans `AudioRename.backup.txt`, à côté du programme. Le son n'est pas coupé. Chaque appareil a sa propre sauvegarde : un Backup de Philips puis de Razer conserve les deux. Un nouveau Backup du même appareil remplace seulement le sien.
-- **Restaurer** remet la sauvegarde de l'appareil sélectionné. Le bouton reste grisé tant qu'aucune sauvegarde n'existe pour lui. Le son est coupé une seconde.
+- **Sauvegarder** enregistre l'appareil sélectionné dans `AudioRename.backup.txt`, à côté du programme. Le son n'est pas coupé. Chaque appareil a sa sauvegarde.
+- **Restaurer** remet la sauvegarde de l'appareil sélectionné. Le bouton reste grisé tant qu'il n'y en a pas.
+
+**Restaurer la dernière sauvegarde au démarrage** crée la tâche `AudioRenameAutoRestore`. Elle s'exécute 15 secondes après l'ouverture de session, avec les droits administrateur, et réécrit les noms sauvegardés.
+
+**Bascule automatique du son** surveille les casques et change le périphérique par défaut, sans couper le son :
+
+| Branché | Lecture | Micro |
+| --- | --- | --- |
+| Pixel Buds | stéréo | Pixel Buds |
+| Razer BlackShark allumé | Game | Chat |
+| aucun des deux | Philips Evnia | inchangé |
+
+Si les deux casques sont là, le dernier connecté gagne. Au démarrage, l'ordre est Pixel, puis Razer, puis l'écran. Les appareils renommés sont reconnus par la sauvegarde, pas par leur ancien nom Windows. Le Razer n'est pris que s'il est vraiment allumé, pas seulement si le dongle est branché.
+
+La bascule se lance à l'ouverture de session, sans fenêtre. Elle a besoin des fichiers à côté de `AudioRename.exe` : `AutoAudioSwitch.ps1`, `RazerDongle.cs`, `Start-AutoAudioSwitch.vbs` et `Modules`.
+
+## Installation
+
+Télécharger `AudioRename-1.1.0.zip` depuis les [releases](https://github.com/yoyo1306/AudioRename/releases), le décompresser, puis lancer `AudioRename.exe`. Garder les fichiers ensemble.
 
 ## Compilation
 
-Windows avec le compilateur 64 bits du .NET Framework 4. Le compilateur 32 bits ne voit pas la bonne vue du registre.
+Windows, compilateur 64 bits du .NET Framework 4. Le compilateur 32 bits ne voit pas la bonne vue du registre.
 
 ```
-C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /target:winexe /optimize+ /win32manifest:app.manifest /out:AudioRename.exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.ServiceProcess.dll AudioRename.cs
+C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /target:winexe /optimize+ /win32manifest:app.manifest /win32icon:AudioRename.ico /out:AudioRename.exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.ServiceProcess.dll AudioRename.cs
 ```
+
+## Crédits
+
+Le changement de périphérique par défaut utilise [AudioDeviceCmdlets](https://github.com/frgnca/AudioDeviceCmdlets) 3.1.0.2, © 2016–2022 François Gendron, licence MIT.
