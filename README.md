@@ -1,6 +1,6 @@
 # AudioRename
 
-Renomme les périphériques audio de Windows, et garde ces noms. Le nom court apparaît dans la barre des tâches. La description est celle du panneau Son.
+Renomme les périphériques audio de Windows, et garde ces noms. Dès que Windows 11 remet un nom par défaut, le logiciel remet le nom enregistré. Le nom court apparaît dans la barre des tâches. La description est celle du panneau Son.
 
 ![AudioRename](screenshot.png)
 
@@ -29,7 +29,7 @@ Lancer `AudioRename.exe`. Windows demande les droits administrateur : les noms s
 
 Si les deux casques sont là, le dernier connecté gagne. Au démarrage, l'ordre est Pixel, puis Razer, puis l'écran. Les appareils renommés sont reconnus par la sauvegarde, pas par leur ancien nom Windows. Le Razer n'est pris que s'il est vraiment allumé, pas seulement si le dongle est branché.
 
-Quand Windows remet un nom de pilote, la bascule réécrit le nom enregistré, sans couper le son et sans attendre le prochain démarrage. Fermer AudioRename ne l'arrête pas. Elle se relance à l'ouverture de session, sans fenêtre, via `Bascule\AudioRename.exe`. Il lui faut aussi `AutoAudioSwitch.ps1`, `RazerDongle.cs` et `Modules`.
+Dès que Windows 11 remet le nom par défaut d'un appareil sauvegardé, la bascule remet tout de suite le nom enregistré, sans couper le son. Fermer AudioRename ne l'arrête pas. Elle se relance à l'ouverture de session, sans fenêtre, via `Bascule\AudioRename.exe`. Il lui faut aussi `AutoAudioSwitch.ps1`, `RazerDongle.cs` et `Modules`.
 
 ## Installation
 
