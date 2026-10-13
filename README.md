@@ -29,11 +29,11 @@ Lancer `AudioRename.exe`. Windows demande les droits administrateur : les noms s
 
 Si les deux casques sont là, le dernier connecté gagne. Au démarrage, l'ordre est Pixel, puis Razer, puis l'écran. Les appareils renommés sont reconnus par la sauvegarde, pas par leur ancien nom Windows. Le Razer n'est pris que s'il est vraiment allumé, pas seulement si le dongle est branché.
 
-La bascule se lance à l'ouverture de session, sans fenêtre. Elle a besoin des fichiers à côté de `AudioRename.exe` : `AutoAudioSwitch.ps1`, `RazerDongle.cs`, `Start-AutoAudioSwitch.vbs` et `Modules`.
+Quand Windows remet un nom de pilote, la bascule réécrit le nom enregistré, sans couper le son et sans attendre le prochain démarrage. Fermer AudioRename ne l'arrête pas. Elle se relance à l'ouverture de session, sans fenêtre, via `Bascule\AudioRename.exe`. Il lui faut aussi `AutoAudioSwitch.ps1`, `RazerDongle.cs` et `Modules`.
 
 ## Installation
 
-Télécharger `AudioRename-1.1.0.zip` depuis les [releases](https://github.com/yoyo1306/AudioRename/releases), le décompresser, puis lancer `AudioRename.exe`. Garder les fichiers ensemble.
+Télécharger `AudioRename-1.2.0.zip` depuis les [releases](https://github.com/yoyo1306/AudioRename/releases), le décompresser, puis lancer `AudioRename.exe`. Garder les fichiers ensemble.
 
 ## Compilation
 
@@ -41,6 +41,12 @@ Windows, compilateur 64 bits du .NET Framework 4. Le compilateur 32 bits ne voit
 
 ```
 C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /target:winexe /optimize+ /win32manifest:app.manifest /win32icon:AudioRename.ico /out:AudioRename.exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.ServiceProcess.dll AudioRename.cs
+```
+
+Le lanceur de la bascule, sans droits administrateur :
+
+```
+C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /target:winexe /optimize+ /win32icon:AudioRename.ico /out:Bascule\AudioRename.exe Bascule\AudioRenameBascule.cs
 ```
 
 ## Crédits

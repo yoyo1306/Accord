@@ -6,6 +6,7 @@
 # Si les deux casques sont actifs, le dernier connecte gagne.
 # Au demarrage : Pixel, puis Razer, puis ecran.
 # Les appareils sont ceux de AudioRename.backup.txt (GUID, puis "Nom (Description)").
+# Si Windows remet un nom pilote, le nom enregistre est reecrit sans couper le son.
 # -Enable / -Disable / -Query : case de la fenetre AudioRename.
 # -TestOnly : affiche le choix sans changer le son.
 param(
@@ -18,7 +19,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BackupPath = Join-Path $ScriptDir 'AudioRename.backup.txt'
-$VbsPath = Join-Path $ScriptDir 'Start-AutoAudioSwitch.vbs'
+$LauncherPath = Join-Path $ScriptDir 'Bascule\AudioRename.exe'
 $StartupDir = [Environment]::GetFolderPath('Startup')
 $ShortcutPath = Join-Path $StartupDir 'AudioRename Bascule.lnk'
 $AppDir = Join-Path $env:LOCALAPPDATA 'AutoAudioSwitch'
@@ -38,19 +39,18 @@ function Get-WatcherProcesses {
 }
 
 function Enable-AutoSwitch {
-    if (-not (Test-Path -LiteralPath $VbsPath)) { throw "Introuvable : $VbsPath" }
+    if (-not (Test-Path -LiteralPath $LauncherPath)) { throw "Introuvable : $LauncherPath" }
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($ShortcutPath)
-    $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
-    $shortcut.Arguments = '"' + $VbsPath + '"'
+    $shortcut.TargetPath = $LauncherPath
+    $shortcut.Arguments = ''
     $shortcut.WorkingDirectory = $ScriptDir
     $shortcut.WindowStyle = 7
-    $shortcut.Description = 'Bascule automatique du son et du micro'
-    $exe = Join-Path $ScriptDir 'AudioRename.exe'
-    if (Test-Path -LiteralPath $exe) { $shortcut.IconLocation = "$exe,0" }
+    $shortcut.Description = 'AudioRename'
+    $shortcut.IconLocation = $LauncherPath + ',0'
     $shortcut.Save()
     if (-not (Get-WatcherProcesses)) {
-        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"' + $VbsPath + '"') -WindowStyle Hidden
+        Start-Process -FilePath $LauncherPath -WorkingDirectory $ScriptDir -WindowStyle Hidden
     }
 }
 
@@ -99,7 +99,7 @@ function Load-Backup([string]$Path) {
         $eq = $line.IndexOf('=')
         if ($eq -lt 0) { continue }
         if ($null -eq $cur) {
-            $cur = New-Object PSObject -Property @{ Flow = ''; Id = ''; Name = ''; Description = '' }
+            $cur = New-Object PSObject -Property @{ Flow = ''; Id = ''; Name = ''; Description = ''; FriendlyName = '' }
         }
         $key = $line.Substring(0, $eq)
         $val = $line.Substring($eq + 1)
@@ -108,9 +108,106 @@ function Load-Backup([string]$Path) {
             'Id' { $cur.Id = $val }
             'Name' { $cur.Name = $val }
             'Description' { $cur.Description = $val }
+            'FriendlyName' { $cur.FriendlyName = $val }
         }
     }
     return $list
+}
+
+function Get-SavedDisplay($Record) {
+    if ($Record.FriendlyName) { return [string]$Record.FriendlyName }
+    if ($Record.Description) { return ([string]$Record.Name) + ' (' + $Record.Description + ')' }
+    return [string]$Record.Name
+}
+
+function Get-SavedLabel($Record) {
+    $display = Get-SavedDisplay $Record
+    $prefix = [string]$Record.Name + ' ('
+    if ($display.StartsWith($prefix) -and $display.EndsWith(')')) {
+        return $display.Substring($prefix.Length, $display.Length - $prefix.Length - 1)
+    }
+    if ($Record.Description) { return [string]$Record.Description }
+    return [string]$Record.Name
+}
+
+function Set-SavedInterfaceName([string]$Flow, [string]$Id, [string]$Label) {
+    if (-not ('MmsysPolicy' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class MmsysPolicy {
+  [DllImport("ole32.dll")]
+  static extern int CoCreateInstance(ref Guid clsid, IntPtr outer, uint ctx, ref Guid iid, out IntPtr ppv);
+  [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+  delegate int SetProp(IntPtr self, [MarshalAs(UnmanagedType.LPWStr)] string id, int fx, ref PropertyKey key, IntPtr pv);
+  [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+  delegate int Release(IntPtr self);
+  [StructLayout(LayoutKind.Sequential)]
+  struct PropertyKey {
+    public Guid fmtid;
+    public uint pid;
+    public PropertyKey(string g, uint p) { fmtid = new Guid(g); pid = p; }
+  }
+  public static void SetInterfaceName(string deviceId, string value) {
+    Guid clsid = new Guid("870af99c-171d-4f9e-af0d-e63df40c2bc9");
+    Guid iid = new Guid("f8679f50-850a-41cf-9c72-430f290290c8");
+    IntPtr obj;
+    int hr = CoCreateInstance(ref clsid, IntPtr.Zero, 1, ref iid, out obj);
+    if (hr < 0 || obj == IntPtr.Zero) throw new InvalidOperationException("0x" + hr.ToString("X8"));
+    try {
+      IntPtr slot = Marshal.ReadIntPtr(Marshal.ReadIntPtr(obj), 12 * IntPtr.Size);
+      var set = (SetProp)Marshal.GetDelegateForFunctionPointer(slot, typeof(SetProp));
+      var key = new PropertyKey("b3f8fa53-0004-438e-9003-51a46e139bfc", 6);
+      IntPtr pv = Marshal.AllocHGlobal(24);
+      try {
+        for (int i = 0; i < 24; i++) Marshal.WriteByte(pv, i, 0);
+        Marshal.WriteInt16(pv, 31);
+        Marshal.WriteIntPtr(pv, 8, Marshal.StringToHGlobalUni(value));
+        hr = set(obj, deviceId, 0, ref key, pv);
+        IntPtr s = Marshal.ReadIntPtr(pv, 8);
+        if (s != IntPtr.Zero) Marshal.FreeHGlobal(s);
+      } finally { Marshal.FreeHGlobal(pv); }
+      if (hr < 0) throw new InvalidOperationException("0x" + hr.ToString("X8"));
+    } finally {
+      var rel = (Release)Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(Marshal.ReadIntPtr(obj), 2 * IntPtr.Size), typeof(Release));
+      rel(obj);
+    }
+  }
+}
+'@ -ErrorAction Stop
+    }
+    $prefix = if ($Flow -eq 'Render') { '{0.0.0.00000000}.' } else { '{0.0.1.00000000}.' }
+    [MmsysPolicy]::SetInterfaceName($prefix + $Id, $Label)
+}
+
+function Repair-SavedNames {
+    if (-not $script:NameRepairState) { $script:NameRepairState = @{} }
+    $devices = @(Get-AudioDevice -List)
+    $now = [DateTime]::UtcNow
+    foreach ($rec in @(Load-Backup $BackupPath)) {
+        if (-not $rec.Id) { continue }
+        $prefix = if ($rec.Flow -eq 'Render') { '{0.0.0.00000000}.' } else { '{0.0.1.00000000}.' }
+        $fullId = $prefix + $rec.Id
+        $live = $null
+        foreach ($d in $devices) {
+            if ([string]$d.ID -eq $fullId) { $live = $d; break }
+        }
+        if (-not $live) { continue }
+        $want = Get-SavedDisplay $rec
+        $shown = [string]$live.Name
+        if (-not $want -or $shown -eq $want) { continue }
+        $state = $script:NameRepairState[$fullId]
+        if ($state -and $state.Live -eq $shown -and $now -lt $state.Next) { continue }
+        $label = Get-SavedLabel $rec
+        if (-not $label) { continue }
+        try {
+            Set-SavedInterfaceName $rec.Flow $rec.Id $label
+            Write-Log ("Name restored " + $rec.Flow + " " + $shown + " -> " + $want)
+        } catch {
+            Write-Log ("Name restore failed " + $rec.Flow + " " + $rec.Id + " " + $_.Exception.Message)
+        }
+        $script:NameRepairState[$fullId] = @{ Live = $shown; Next = $now.AddMinutes(5) }
+    }
 }
 
 function Find-Live($Devices, [string]$Type, [string[]]$Include, [string[]]$Exclude = @()) {
@@ -268,12 +365,14 @@ if ($TestOnly) {
 
 Write-Log 'Watcher started (AudioRename names + Pixel BT + Razer HID)'
 Write-Log ("Startup: Pixel=" + [bool]$presence.PixelOn + " RazerHID=" + [bool]$presence.RazerOn + " -> " + $active)
+Repair-SavedNames
 Apply-Profile $active $presence
 $pixelWas = [bool]$presence.PixelOn
 $razerWas = [bool]$presence.RazerOn
 
 while ($true) {
     try {
+        Repair-SavedNames
         $presence = Get-HeadsetPresence
         $pixelOn = [bool]$presence.PixelOn
         $razerOn = [bool]$presence.RazerOn

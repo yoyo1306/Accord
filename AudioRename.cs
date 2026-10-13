@@ -259,7 +259,12 @@ namespace AudioRename
             string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Restore-AudioNames.ps1");
             string command = "& '" + QuotePs(script) + "' -MmsysOnly -Flow '" + QuotePs(flow) + "' -Id '" + QuotePs(id) + "' -Name '" + QuotePs(name) + "' -Description '" + QuotePs(description) + "'";
             string args = "-NoProfile -ExecutionPolicy Bypass -Command \"" + command + "\"";
-            Process process = Process.Start("powershell.exe", args);
+            var start = new ProcessStartInfo();
+            start.FileName = "powershell.exe";
+            start.Arguments = args;
+            start.UseShellExecute = false;
+            start.CreateNoWindow = true;
+            Process process = Process.Start(start);
             if (process == null || !process.WaitForExit(30000) || process.ExitCode != 0)
                 throw new InvalidOperationException("Le panneau Son n'a pas été mis à jour.");
         }
@@ -1064,7 +1069,12 @@ namespace AudioRename
         {
             try
             {
-                Process process = Process.Start(file, args);
+                var start = new ProcessStartInfo();
+                start.FileName = file;
+                start.Arguments = args;
+                start.UseShellExecute = false;
+                start.CreateNoWindow = true;
+                Process process = Process.Start(start);
                 if (process == null || !process.WaitForExit(timeout)) return -1;
                 return process.ExitCode;
             }
