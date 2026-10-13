@@ -8,8 +8,14 @@ using System.Text;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.ServiceProcess;
+using System.Reflection;
 using System.Windows.Forms;
 using Microsoft.Win32;
+
+[assembly: AssemblyTitle("AudioRename")]
+[assembly: AssemblyProduct("AudioRename")]
+[assembly: AssemblyVersion("1.2.1.0")]
+[assembly: AssemblyFileVersion("1.2.1.0")]
 
 namespace AudioRename
 {
@@ -752,6 +758,7 @@ namespace AudioRename
         public MainForm()
         {
             Text = "Périphériques audio";
+            Version version = Assembly.GetExecutingAssembly().GetName().Version;
             Font = new Font("Segoe UI", 9f);
             try
             {
@@ -839,6 +846,15 @@ namespace AudioRename
             status.Height = 22;
             bottom.Controls.Add(status);
 
+            var versionLabel = new Label();
+            versionLabel.AutoSize = false;
+            versionLabel.Text = version.ToString(3);
+            versionLabel.TextAlign = ContentAlignment.MiddleRight;
+            versionLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            versionLabel.Size = new Size(72, 22);
+            versionLabel.Location = new Point(760, 140);
+            bottom.Controls.Add(versionLabel);
+
             autoSwitchBox.Text = "Bascule automatique du son";
             autoSwitchBox.Location = new Point(12, 110);
             autoSwitchBox.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
@@ -867,7 +883,9 @@ namespace AudioRename
                 int fieldWidth = Math.Max(80, renameButton.Left - 16 - nameBox.Left);
                 nameBox.Width = fieldWidth;
                 descriptionBox.Width = fieldWidth;
-                status.Width = bottom.ClientSize.Width - 24;
+                versionLabel.Location = new Point(right - versionLabel.Width, 140);
+                status.Width = Math.Max(80, versionLabel.Left - 8 - status.Left);
+                versionLabel.BringToFront();
                 renameButton.BringToFront();
                 refreshButton.BringToFront();
                 backupButton.BringToFront();
@@ -1096,13 +1114,13 @@ namespace AudioRename
 
         void OnAutoRestoreChanged(object sender, EventArgs e)
         {
-            string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Restore-AudioNames.ps1");
+            string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Start-RestoreAudioNames.vbs");
             string args;
             if (autoRestoreBox.Checked)
             {
                 if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AudioRename.backup.txt")))
                     MessageBox.Show(this, "Aucune sauvegarde pour l'instant. La restauration s'appliquera dès qu'il y en aura une.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                args = "/Create /TN \"AudioRenameAutoRestore\" /TR \"powershell.exe -NoProfile -ExecutionPolicy Bypass -File \\\"" + script + "\\\"\" /SC ONLOGON /DELAY 0000:15 /RL HIGHEST /F";
+                args = "/Create /TN \"AudioRenameAutoRestore\" /TR \"wscript.exe \\\"" + script + "\\\"\" /SC ONLOGON /DELAY 0000:15 /RL HIGHEST /F";
             }
             else
             {

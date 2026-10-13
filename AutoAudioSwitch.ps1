@@ -181,7 +181,7 @@ public static class MmsysPolicy {
 }
 
 function Repair-SavedNames {
-    if (-not $script:NameRepairState) { $script:NameRepairState = @{} }
+    if (-not $script:NameRepairFail) { $script:NameRepairFail = @{} }
     $devices = @(Get-AudioDevice -List)
     $now = [DateTime]::UtcNow
     foreach ($rec in @(Load-Backup $BackupPath)) {
@@ -195,18 +195,22 @@ function Repair-SavedNames {
         if (-not $live) { continue }
         $want = Get-SavedDisplay $rec
         $shown = [string]$live.Name
-        if (-not $want -or $shown -eq $want) { continue }
-        $state = $script:NameRepairState[$fullId]
-        if ($state -and $state.Live -eq $shown -and $now -lt $state.Next) { continue }
+        if (-not $want -or $shown -eq $want) {
+            if ($script:NameRepairFail.ContainsKey($fullId)) { $script:NameRepairFail.Remove($fullId) }
+            continue
+        }
+        $fail = $script:NameRepairFail[$fullId]
+        if ($fail -and $now -lt $fail) { continue }
         $label = Get-SavedLabel $rec
         if (-not $label) { continue }
         try {
             Set-SavedInterfaceName $rec.Flow $rec.Id $label
             Write-Log ("Name restored " + $rec.Flow + " " + $shown + " -> " + $want)
+            if ($script:NameRepairFail.ContainsKey($fullId)) { $script:NameRepairFail.Remove($fullId) }
         } catch {
             Write-Log ("Name restore failed " + $rec.Flow + " " + $rec.Id + " " + $_.Exception.Message)
+            $script:NameRepairFail[$fullId] = $now.AddSeconds(30)
         }
-        $script:NameRepairState[$fullId] = @{ Live = $shown; Next = $now.AddMinutes(5) }
     }
 }
 

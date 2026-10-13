@@ -16,8 +16,9 @@ Lancer `AudioRename.exe`. Windows demande les droits administrateur : les noms s
 - **Actualiser** relit la liste.
 - **Sauvegarder** enregistre l'appareil sélectionné dans `AudioRename.backup.txt`, à côté du programme. Le son n'est pas coupé. Chaque appareil a sa sauvegarde.
 - **Restaurer** remet la sauvegarde de l'appareil sélectionné. Le bouton reste grisé tant qu'il n'y en a pas.
+- Le numéro de version s'affiche en bas à droite.
 
-**Restaurer la dernière sauvegarde au démarrage** crée la tâche `AudioRenameAutoRestore`. Elle s'exécute 15 secondes après l'ouverture de session, avec les droits administrateur, et réécrit les noms sauvegardés.
+**Restaurer la dernière sauvegarde au démarrage** crée la tâche `AudioRenameAutoRestore`. Elle s'exécute 15 secondes après l'ouverture de session, avec les droits administrateur, et réécrit les noms sauvegardés, sans fenêtre.
 
 **Bascule automatique du son** surveille les casques et change le périphérique par défaut, sans couper le son :
 
@@ -29,11 +30,11 @@ Lancer `AudioRename.exe`. Windows demande les droits administrateur : les noms s
 
 Si les deux casques sont là, le dernier connecté gagne. Au démarrage, l'ordre est Pixel, puis Razer, puis l'écran. Les appareils renommés sont reconnus par la sauvegarde, pas par leur ancien nom Windows. Le Razer n'est pris que s'il est vraiment allumé, pas seulement si le dongle est branché.
 
-Dès que Windows 11 remet le nom par défaut d'un appareil sauvegardé, la bascule remet tout de suite le nom enregistré, sans couper le son. Fermer AudioRename ne l'arrête pas. Elle se relance à l'ouverture de session, sans fenêtre, via `Bascule\AudioRename.exe`. Il lui faut aussi `AutoAudioSwitch.ps1`, `RazerDongle.cs` et `Modules`.
+Dès que Windows 11 remet le nom par défaut d'un appareil sauvegardé, la bascule le remet tout de suite, puis autant de fois que nécessaire, sans couper le son. Fermer AudioRename ne l'arrête pas. Elle se relance à l'ouverture de session, sans fenêtre, via `Bascule\AudioRename.exe`. Il lui faut aussi `AutoAudioSwitch.ps1`, `RazerDongle.cs`, `Start-RestoreAudioNames.vbs` et `Modules`.
 
 ## Installation
 
-Télécharger `AudioRename-1.2.0.zip` depuis les [releases](https://github.com/yoyo1306/AudioRename/releases), le décompresser, puis lancer `AudioRename.exe`. Garder les fichiers ensemble.
+Télécharger `AudioRename-1.2.1.zip` depuis les [releases](https://github.com/yoyo1306/AudioRename/releases), le décompresser, puis lancer `AudioRename.exe`. Garder les fichiers ensemble.
 
 ## Compilation
 
