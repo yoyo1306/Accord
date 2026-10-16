@@ -1,11 +1,11 @@
-﻿# Restaure la sauvegarde AudioRename (AudioRename.backup.txt) apres un boot.
+﻿# Restaure la sauvegarde Accord (Accord.backup.txt) apres un boot.
 # (pas de #Requires : le mode -TestOnly doit tourner sans admin)
 # Utilisé par la case "Restaurer la dernière sauvegarde au démarrage" (tâche planifiée).
 #  - Lit Flow/Id/Name/Description (+Alias/Interface/Friendly/DeviceDesc, Hw/Wave) du backup
 #  - Résout chaque appareil : GUID direct, sinon chemin matériel (Hw), sinon Wave
 #  - Réécrit les valeurs (avec prise de propriété comme l'app), redémarre l'audio une fois
 #  - Puis repose le nom du panneau Son (mmsys.cpl) : le redémarrage audio réécrit sinon le nom matériel
-#  - Journal : AudioRename.autorestore.log
+#  - Journal : Accord.autorestore.log
 # Mode test (lecture seule, sans admin) : -TestOnly [-Dir ...]
 # Un seul appareil, sans redémarrer l'audio : -MmsysOnly -Flow Render -Id {guid} -Name X -Description Y
 param([switch]$TestOnly, [string]$Dir = $PSScriptRoot, [switch]$MmsysOnly, [string]$Flow, [string]$Id, [string]$Name, [string]$Description)
@@ -268,7 +268,7 @@ public static class MmsysPolicy {
 }
 
 # ---------------- main ----------------
-$log = Join-Path $Dir 'AudioRename.autorestore.log'
+$log = Join-Path $Dir 'Accord.autorestore.log'
 function Write-Log($s) {
     $line = (Get-Date -Format 's') + ' ' + $s
     Add-Content -Path $log -Value $line -Encoding UTF8
@@ -287,7 +287,7 @@ try {
         }
         Enable-Privileges
     }
-    $all = Load-Backup (Join-Path $Dir 'AudioRename.backup.txt')
+    $all = Load-Backup (Join-Path $Dir 'Accord.backup.txt')
     if ($all.Count -eq 0) { Write-Log 'no-backup'; exit 1 }
     $renderList = Get-Endpoints 'Render'
     $captureList = Get-Endpoints 'Capture'
@@ -296,6 +296,8 @@ try {
     $pending = @()
     foreach ($b in $all) {
         try {
+            $blob = ($b.Name + ' ' + $b.Description + ' ' + $b.Alias + ' ' + $b.FriendlyName + ' ' + $b.InterfaceName)
+            if ($blob -like '*Hands-Free*') { continue }
             $r = Resolve-Endpoint $b $renderList $captureList
             if ($r -eq $null) { throw 'appareil introuvable' }
             $full = if ([string]::IsNullOrEmpty($b.Description)) { $b.Name } else { $b.Name + ' (' + $b.Description + ')' }

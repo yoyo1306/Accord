@@ -12,10 +12,10 @@ using System.Reflection;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-[assembly: AssemblyTitle("AudioRename")]
-[assembly: AssemblyProduct("AudioRename")]
-[assembly: AssemblyVersion("1.2.1.0")]
-[assembly: AssemblyFileVersion("1.2.1.0")]
+[assembly: AssemblyTitle("Accord")]
+[assembly: AssemblyProduct("Accord")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace AudioRename
 {
@@ -623,7 +623,7 @@ namespace AudioRename
     {
         static string FilePath
         {
-            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AudioRename.backup.txt"); }
+            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Accord.backup.txt"); }
         }
 
         public static bool Exists(AudioDevice device)
@@ -757,7 +757,7 @@ namespace AudioRename
 
         public MainForm()
         {
-            Text = "Périphériques audio";
+            Text = "Accord";
             Version version = Assembly.GetExecutingAssembly().GetName().Version;
             Font = new Font("Segoe UI", 9f);
             try
@@ -869,7 +869,7 @@ namespace AudioRename
             autoRestoreBox.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
             autoRestoreBox.AutoSize = false;
             autoRestoreBox.Size = new Size(330, 24);
-            autoRestoreBox.Checked = RunTool("schtasks.exe", "/Query /TN \"AudioRenameAutoRestore\"", 15000) == 0;
+            autoRestoreBox.Checked = RunTool("schtasks.exe", "/Query /TN \"AccordRestauration\"", 15000) == 0;
             autoRestoreBox.CheckedChanged += OnAutoRestoreChanged;
             bottom.Controls.Add(autoRestoreBox);
 
@@ -962,6 +962,7 @@ namespace AudioRename
 
         bool MatchesFilter(AudioDevice device)
         {
+            if (device.Description != null && device.Description.IndexOf("Hands-Free") >= 0) return false;
             if (showActive.Checked && device.IsActiveGroup) return true;
             if (showDisabled.Checked && device.IsDisabledGroup) return true;
             if (showDisconnected.Checked && device.IsDisconnectedGroup) return true;
@@ -1118,13 +1119,13 @@ namespace AudioRename
             string args;
             if (autoRestoreBox.Checked)
             {
-                if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AudioRename.backup.txt")))
+                if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Accord.backup.txt")))
                     MessageBox.Show(this, "Aucune sauvegarde pour l'instant. La restauration s'appliquera dès qu'il y en aura une.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                args = "/Create /TN \"AudioRenameAutoRestore\" /TR \"wscript.exe \\\"" + script + "\\\"\" /SC ONLOGON /DELAY 0000:15 /RL HIGHEST /F";
+                args = "/Create /TN \"AccordRestauration\" /TR \"wscript.exe \\\"" + script + "\\\"\" /SC ONLOGON /DELAY 0000:15 /RL HIGHEST /F";
             }
             else
             {
-                args = "/Delete /TN \"AudioRenameAutoRestore\" /F";
+                args = "/Delete /TN \"AccordRestauration\" /F";
             }
             if (RunTool("schtasks.exe", args, 20000) == 0) return;
             autoRestoreBox.CheckedChanged -= OnAutoRestoreChanged;
