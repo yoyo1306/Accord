@@ -1,0 +1,19 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/Accord.Core/Accord.Core.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Accord.Admin/Accord.Admin.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Accord.Watcher/Accord.Watcher.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Accord.App/Accord.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+</Solution>

@@ -1,56 +1,62 @@
 # Accord
 
-Renomme les périphériques audio de Windows, et garde ces noms. Dès que Windows 11 remet un nom par défaut, le logiciel remet le nom enregistré. Le nom court apparaît dans la barre des tâches. La description est celle du panneau Son.
+Utilitaire Windows 11 en **WinUI 3 / .NET 10** pour renommer durablement les périphériques audio Windows (registre `MMDevices` + `SWD\MMDEVAPI` + panneau Son `mmsys.cpl`), sauvegarder/restaurer leurs noms au démarrage et gérer la **bascule automatique du son et du micro** selon les casques réellement actifs.
 
-![Accord](screenshot.png)
+![Aperçu d'Accord](apercu.png)
 
-## Utilisation
+## Fonctionnalités
 
-Lancer `Accord.exe`. Windows demande les droits administrateur : les noms sont dans une clé du registre protégée, et le service Audio est redémarré une seconde le temps d'écrire le nom du panneau Son.
+- **Inventaire et renommage durable (Lecture & Enregistrement)**
+  - Filtrage par état (**Actifs**, **Déconnectés**, **Désactivés**) et recherche instantanée (les profils `Hands-Free` et cachés sont masqués).
+  - Modification du **Nom** et de la **Description** avec aperçu temps réel, prise de propriété temporaire sur les clés protégées `MMDevices` suivie de la restauration exacte du descripteur de sécurité (`SDDL`), redémarrage propre du service `Audiosrv` et réapplication immédiate du nom d'interface dans `mmsys.cpl` via COM `IPolicyConfig`.
+  - Définition comme périphérique par défaut (Multimédia + Communications) en un clic sans élévation.
+- **Sauvegarde et restauration au démarrage**
+  - Sauvegarde individuelle au format compatible `Accord.backup.txt` (incluant les identifiants matériels `Hw` / `Wave` pour résister aux changements de GUID Windows).
+  - Restauration unitaire, restauration globale à la demande ou automatique à l'ouverture de session via la tâche planifiée `AccordRestauration` (exécutée nativement par `Accord.Admin.exe --restore-boot`).
+- **Bascule automatique du son (`Accord.Watcher.exe`)**
+  - Surveillance légère en arrière-plan (instance unique, sans fenêtre, journal rotatif à 512 Ko).
+  - Détection matérielle réelle : **Pixel Buds** via l'état Bluetooth natif (`SetupAPI` / `CfgMgr32`), **Razer BlackShark V3 Pro** via requête HID 2,4 GHz directe sur le dongle (`VID_1532` / `PID_0577` / `col04`), et **Écran (Philips Evnia)** en sortie de repli.
+  - Règles de priorité : dernier casque connecté gagnant, bascule sortie + micro (Multimédia et Communications), réparation silencieuse des noms (`RepairSavedNames`), forçage manuel en un clic depuis le bandeau supérieur et personnalisation optionnelle des cibles dans **Options**.
+- **Interface Windows 11 native & 0 prérequis**
+  - Fond **Mica**, barre de titre personnalisée, accent système Windows 11, mode **Clair / Sombre** mémorisé, tiroir **Options** intégré et instance unique.
+  - Exécution de l'interface en utilisateur standard avec élévation UAC ponctuelle via `Accord.Admin.exe` (Named Pipe sécurisé `AuthenticatedUserSid` + repli fichier).
+  - Compatible mode **portable** (configuration à côté de l'exécutable) et installation **`Program Files`** (données partagées dans `%ProgramData%\Accord\`).
 
-- **Lecture** et **Enregistrement**.
-- **Actifs**, **Désactivés**, **Déconnectés**. Au lancement, seule **Actifs** est cochée.
-- Le profil **Hands-Free** n'apparaît pas dans la liste.
-- Sélectionner un appareil, modifier **Nom** et **Description**, puis **Renommer**.
-  - La barre des tâches affiche `Nom (Description)`.
-  - Le panneau Son affiche la description.
-- **Actualiser** relit la liste.
-- **Sauvegarder** enregistre l'appareil sélectionné dans `Accord.backup.txt`, à côté du programme. Le son n'est pas coupé. Chaque appareil a sa sauvegarde.
-- **Restaurer** remet la sauvegarde de l'appareil sélectionné. Le bouton reste grisé tant qu'il n'y en a pas.
-- Le numéro de version s'affiche en bas à droite.
+## Structure du projet
 
-**Restaurer la dernière sauvegarde au démarrage** crée la tâche `AccordRestauration`. Elle s'exécute 15 secondes après l'ouverture de session, avec les droits administrateur, et réécrit les noms sauvegardés, sans fenêtre. Une entrée Hands-Free déjà présente dans la sauvegarde est ignorée.
-
-**Bascule automatique du son** surveille les casques et change le périphérique par défaut, sans couper le son :
-
-| Branché | Lecture | Micro |
-| --- | --- | --- |
-| Pixel Buds | stéréo | Pixel Buds |
-| Razer BlackShark allumé | Game | Chat |
-| aucun des deux | Philips Evnia | inchangé |
-
-Si les deux casques sont là, le dernier connecté gagne. Au démarrage, l'ordre est Pixel, puis Razer, puis l'écran. Les appareils renommés sont reconnus par la sauvegarde, pas par leur ancien nom Windows. Le Razer n'est pris que s'il est vraiment allumé, pas seulement si le dongle est branché. Le profil Hands-Free n'est pas choisi.
-
-Dès que Windows 11 remet le nom par défaut d'un appareil sauvegardé, la bascule le remet tout de suite, puis autant de fois que nécessaire, sans couper le son. Fermer Accord ne l'arrête pas. Elle se relance à l'ouverture de session, sans fenêtre, via `Bascule\Accord.exe`. Ce processus suffit : il ne lance ni PowerShell ni le compilateur C#.
-
-## Installation
-
-Télécharger `Accord-1.3.0.zip` depuis les [releases](https://github.com/yoyo1306/Accord/releases), le décompresser, puis lancer `Accord.exe`. Garder les fichiers ensemble.
-
-## Compilation
-
-Windows, compilateur 64 bits du .NET Framework 4. Le compilateur 32 bits ne voit pas la bonne vue du registre.
-
-```
-C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /target:winexe /optimize+ /win32manifest:app.manifest /win32icon:AudioRename.ico /out:Accord.exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.ServiceProcess.dll AudioRename.cs
+```text
+accord/
+├── Accord.slnx                 # Solution .NET 10 (x64)
+├── build.ps1                   # Publication self-contained partagée + compilation Inno Setup 6
+├── assets/                     # Icônes multi-résolutions (accord.ico, accord.png)
+├── installer/
+│   └── Accord.iss              # Script Inno Setup 6 (Program Files, Menu Démarrer, ProgramData)
+├── src/
+│   ├── Accord.Core/            # Core Audio COM, Registre, Razer HID, Bluetooth, Switcher, IPC, AppPaths
+│   ├── Accord.App/             # Interface WinUI 3 (WindowsAppSDK self-contained, asInvoker)
+│   ├── Accord.Watcher/         # Agent de bascule auto & réparation des noms (asInvoker)
+│   └── Accord.Admin/           # Module privilégié registre / Audiosrv / tâche boot (requireAdministrator)
+└── legacy/                     # Archive des anciens binaires et scripts PowerShell/VBS
 ```
 
-La bascule, sans droits administrateur :
+## Compilation et installateur
 
+Prérequis de build : **.NET 10 SDK** et **Inno Setup 6** (`ISCC.exe`). Aucun prérequis côté utilisateur final.
+
+```powershell
+# Compiler uniquement le dossier portable publish/
+.\build.ps1 -SkipInstaller
+
+# Compiler publish/ + l'installateur dist\Accord-Setup-2.0.0.exe
+.\build.ps1
 ```
-C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /target:winexe /optimize+ /win32icon:AudioRename.ico /out:Bascule\Accord.exe Bascule\Accord.cs RazerDongle.cs
+
+## Modes CLI utiles
+
+```powershell
+# Diagnostic de la détection matérielle (Pixel Bluetooth / Razer HID / Écran) sans modifier le son
+.\publish\Accord.Watcher.exe --test-only
+
+# Simulation en lecture seule de la restauration complète au démarrage
+.\publish\Accord.Admin.exe --restore-boot --test-only
 ```
-
-## Crédits
-
-Le changement de périphérique par défaut utilise [AudioDeviceCmdlets](https://github.com/frgnca/AudioDeviceCmdlets) 3.1.0.2, © 2016–2022 François Gendron, licence MIT.

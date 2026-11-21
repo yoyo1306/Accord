@@ -1,8 +1,25 @@
+# Build & packaging outputs
+bin/
+obj/
+publish/
+dist/
+*.user
+*.suo
+*.vs/
+.vs/
+
+# Runtime state, personal backups & logs
+*.log
+/ipc/
+watcher-status.json
+settings.json
 Accord.backup.txt
 Accord.autorestore.log
 Accord.running.exe
-/Accord.exe
 AudioRename.backup.txt
 AudioRename.autorestore.log
 AudioRename.running.exe
-/AudioRename.exe
+
+# Legacy compiled binaries
+legacy/Accord.exe
+legacy/Bascule/Accord.exe
