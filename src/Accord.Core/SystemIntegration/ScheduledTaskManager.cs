@@ -4,6 +4,7 @@ namespace Accord.Core.SystemIntegration;
 
 /// <summary>
 /// Manages the Windows Scheduled Task "AccordRestauration" that invokes Accord.Admin.exe --restore-boot at logon.
+/// Automatically detects legacy v1.x tasks pointing to Start-RestoreAudioNames.vbs / wscript.exe.
 /// </summary>
 public static class ScheduledTaskManager
 {
@@ -11,7 +12,19 @@ public static class ScheduledTaskManager
 
     public static bool IsBootRestoreEnabled()
     {
-        return RunSchtasks($"/Query /TN \"{TaskName}\"") == 0;
+        (int code, string xml) = RunSchtasksCapture($"/Query /TN \"{TaskName}\" /XML");
+        if (code != 0 || string.IsNullOrWhiteSpace(xml)) return false;
+
+        // Treat legacy v1.x VBS/PowerShell tasks as NOT configured for Accord v2
+        if (IsLegacyTaskXml(xml)) return false;
+
+        return xml.Contains("Accord.Admin.exe", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool HasLegacyBootRestoreTask()
+    {
+        (int code, string xml) = RunSchtasksCapture($"/Query /TN \"{TaskName}\" /XML");
+        return code == 0 && !string.IsNullOrWhiteSpace(xml) && IsLegacyTaskXml(xml);
     }
 
     public static void SetBootRestoreEnabled(bool enabled)
@@ -34,7 +47,7 @@ public static class ScheduledTaskManager
         }
         else
         {
-            if (!IsBootRestoreEnabled()) return;
+            if (RunSchtasks($"/Query /TN \"{TaskName}\"") != 0) return;
             int code = RunSchtasks($"/Delete /TN \"{TaskName}\" /F");
             if (code != 0)
             {
@@ -43,7 +56,18 @@ public static class ScheduledTaskManager
         }
     }
 
+    private static bool IsLegacyTaskXml(string xml) =>
+        xml.Contains("Start-RestoreAudioNames.vbs", StringComparison.OrdinalIgnoreCase) ||
+        xml.Contains("Restore-AudioNames.ps1", StringComparison.OrdinalIgnoreCase) ||
+        xml.Contains("wscript.exe", StringComparison.OrdinalIgnoreCase);
+
     private static int RunSchtasks(string arguments)
+    {
+        (int code, _) = RunSchtasksCapture(arguments);
+        return code;
+    }
+
+    private static (int ExitCode, string StdOut) RunSchtasksCapture(string arguments)
     {
         using var proc = new Process
         {
@@ -58,7 +82,8 @@ public static class ScheduledTaskManager
             }
         };
         proc.Start();
+        string stdout = proc.StandardOutput.ReadToEnd();
         proc.WaitForExit(10000);
-        return proc.HasExited ? proc.ExitCode : -1;
+        return (proc.HasExited ? proc.ExitCode : -1, stdout);
     }
 }

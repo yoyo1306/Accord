@@ -1,5 +1,5 @@
 #define AppName "Accord"
-#define AppVersion "2.0.0"
+#define AppVersion "2.0.1"
 #define AppPublisher "Accord"
 #define AppExeName "Accord.exe"
 #define PublishDir "..\publish"
@@ -131,22 +131,45 @@ begin
   Result := '';
 end;
 
+procedure MigrateExistingBootRestoreTask;
+var
+  ResultCode: Integer;
+  TaskRun, Args: String;
+begin
+  // Si la tâche AccordRestauration existe déjà (ex. v1.x .vbs ou ancien chemin),
+  // la met automatiquement à jour vers Accord.Admin.exe --restore-boot.
+  if Exec(ExpandConstant('{sys}\schtasks.exe'), '/Query /TN "AccordRestauration"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+  begin
+    TaskRun := '\"' + ExpandConstant('{app}\Accord.Admin.exe') + '\" --restore-boot --data-dir \"' + ExpandConstant('{commonappdata}\{#AppName}') + '\"';
+    Args := '/Create /TN "AccordRestauration" /TR "' + TaskRun + '" /SC ONLOGON /RL HIGHEST /F';
+    Exec(ExpandConstant('{sys}\schtasks.exe'), Args, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  OldLegacyLnk: String;
 begin
   if CurStep = ssPostInstall then
   begin
     UpdateSystemPath(ExpandConstant('{app}'), WizardIsTaskSelected('addtopath'));
+    MigrateExistingBootRestoreTask;
+    OldLegacyLnk := ExpandConstant('{userstartup}\AudioRename Bascule.lnk');
+    if FileExists(OldLegacyLnk) then
+      DeleteFile(OldLegacyLnk);
   end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   StartupLnk: String;
+  ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
     StopRunningAccordInstances;
     UpdateSystemPath(ExpandConstant('{app}'), False);
+    Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN "AccordRestauration" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     StartupLnk := ExpandConstant('{userstartup}\Accord.lnk');
     if FileExists(StartupLnk) then
       DeleteFile(StartupLnk);

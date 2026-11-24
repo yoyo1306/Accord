@@ -148,6 +148,10 @@ public sealed partial class MainWindow : Window
         ApplyThemeBrushes();
         UpdateTitleBarRegions();
         ReloadDevices(keepSelection: false);
+        if (ScheduledTaskManager.HasLegacyBootRestoreTask())
+        {
+            SetStatus("Ancienne tâche de démarrage v1 détectée : activez « Restaurer au démarrage » dans Options pour la migrer.", StatusKind.Warning);
+        }
         _ = RefreshLiveBannerAsync();
         _statusTimer.Start();
     }

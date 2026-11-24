@@ -49,7 +49,7 @@
                         VerticalAlignment="Center">
                         <TextBlock
                             x:Name="VersionPillText"
-                            Text="v2.0"
+                            Text="v2.0.1"
                             FontSize="11"
                             FontWeight="Medium"
                             Typography.NumeralAlignment="Tabular" />

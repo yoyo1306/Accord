@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1 — 2026-11-23
+
+### Correctifs
+- **Migration automatique de la tâche planifiée `AccordRestauration`** : l'installateur Inno Setup met désormais automatiquement à jour toute ancienne tâche v1.x pointant vers `Start-RestoreAudioNames.vbs` / `wscript.exe` vers le binaire natif `Accord.Admin.exe --restore-boot --data-dir "%ProgramData%\Accord"` (et la supprime proprement à la désinstallation).
+- **Détection des tâches héritées dans l'UI** : `ScheduledTaskManager` n'affiche plus « Restaurer au démarrage » comme activé si la tâche pointe encore vers l'ancien script VBS, et signale dans la barre d'état qu'une migration est nécessaire en mode portable.
+
 ## 2.0.0 — 2026-11-21
 
 ### Réécriture complète Windows 11 (.NET 10 / WinUI 3)
