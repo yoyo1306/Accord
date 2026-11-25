@@ -46,6 +46,9 @@ public static class AudioRegistryService
         var backupKeys = new HashSet<string>(
             backups.Select(b => $"{b.Flow}|{b.Id}"),
             StringComparer.OrdinalIgnoreCase);
+        var backupWaves = new HashSet<string>(
+            backups.Where(b => !string.IsNullOrWhiteSpace(b.Wave)).Select(b => $"{b.Flow}|{b.Wave}"),
+            StringComparer.OrdinalIgnoreCase);
 
         string? defPlayMulti = null;
         string? defPlayComm = null;
@@ -64,8 +67,8 @@ public static class AudioRegistryService
             // Core Audio may be temporarily restarting.
         }
 
-        LoadFlow(list, "Render", backupKeys, defPlayMulti, defPlayComm);
-        LoadFlow(list, "Capture", backupKeys, defRecMulti, defRecComm);
+        LoadFlow(list, "Render", backupKeys, backupWaves, defPlayMulti, defPlayComm);
+        LoadFlow(list, "Capture", backupKeys, backupWaves, defRecMulti, defRecComm);
 
         list.Sort((a, b) =>
         {
@@ -91,6 +94,7 @@ public static class AudioRegistryService
         List<AudioDevice> list,
         string flow,
         HashSet<string> backupKeys,
+        HashSet<string> backupWaves,
         string? defaultMultiId,
         string? defaultCommId)
     {
@@ -116,6 +120,9 @@ public static class AudioRegistryService
             if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(desc)) continue;
 
             string endpointId = BuildEndpointId(flow, sub);
+            bool hasBackup = backupKeys.Contains($"{flow}|{sub}") ||
+                             (!string.IsNullOrWhiteSpace(wave) && backupWaves.Contains($"{flow}|{wave}"));
+
             var dev = new AudioDevice
             {
                 Flow = flow,
@@ -125,7 +132,7 @@ public static class AudioRegistryService
                 State = state,
                 HardwarePath = hw,
                 WaveId = wave,
-                HasBackup = backupKeys.Contains($"{flow}|{sub}"),
+                HasBackup = hasBackup,
                 IsDefaultMultimedia = string.Equals(endpointId, defaultMultiId, StringComparison.OrdinalIgnoreCase),
                 IsDefaultCommunications = string.Equals(endpointId, defaultCommId, StringComparison.OrdinalIgnoreCase)
             };
@@ -243,17 +250,33 @@ public static class AudioRegistryService
         var renderIndex = ReadHardwareIndex("Render");
         var captureIndex = ReadHardwareIndex("Capture");
         var pendingMmsys = new List<(string Flow, string Id, string Name, string Description)>();
+        var appliedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool backupSelfHealed = false;
 
-        foreach (DeviceBackup b in all)
+        // Iterate newest-first so if legacy duplicates exist for the same Wave pin, the latest wins.
+        for (int i = all.Count - 1; i >= 0; i--)
         {
+            DeviceBackup b = all[i];
             if (b.IsHandsFree) continue;
             try
             {
-                (string Id, string How)? resolved = ResolveEndpoint(b, renderIndex, captureIndex);
+                (string Id, string How, bool IsActive)? resolved = ResolveEndpoint(b, renderIndex, captureIndex);
                 if (resolved is null)
                 {
                     result.Failed++;
                     result.Lines.Add($"FAIL {b.Flow}/{b.Id} : appareil introuvable");
+                    continue;
+                }
+
+                string targetKey = $"{b.Flow}|{resolved.Value.Id}";
+                if (!appliedTargets.Add(targetKey))
+                {
+                    // Duplicate stale backup entry pointing to the same physical endpoint; remove it when self-healing.
+                    if (!testOnly)
+                    {
+                        all.RemoveAt(i);
+                        backupSelfHealed = true;
+                    }
                     continue;
                 }
 
@@ -267,6 +290,12 @@ public static class AudioRegistryService
                     ApplyBackupToRegistry(b, resolved.Value.Id);
                     pendingMmsys.Add((b.Flow, resolved.Value.Id, b.Name, b.Description));
                     result.Lines.Add($"OK {b.Flow} {resolved.Value.Id} via={resolved.Value.How}");
+
+                    if (resolved.Value.IsActive && !string.Equals(b.Id, resolved.Value.Id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        b.Id = resolved.Value.Id;
+                        backupSelfHealed = true;
+                    }
                 }
                 result.Applied++;
             }
@@ -275,6 +304,11 @@ public static class AudioRegistryService
                 result.Failed++;
                 result.Lines.Add($"FAIL {b.Flow}/{b.Id} : {ex.Message}");
             }
+        }
+
+        if (!testOnly && backupSelfHealed)
+        {
+            try { BackupStore.SaveAll(all, backupPath); } catch { }
         }
 
         if (!testOnly && result.Applied > 0)
@@ -325,7 +359,24 @@ public static class AudioRegistryService
         WritePublishedValues(b.Flow, targetId, enumFriendly, b.HasFriendly || !string.IsNullOrEmpty(full), b.DeviceDesc ?? string.Empty, b.HasDeviceDesc);
     }
 
-    private sealed record EndpointHwEntry(string Id, string Hw, string Wave);
+    public sealed record ActiveHardwareInfo(string Flow, string RawId, string EndpointId, string Hw, string Wave, string Name);
+
+    public static Dictionary<string, ActiveHardwareInfo> ReadActiveHardwareMap()
+    {
+        var map = new Dictionary<string, ActiveHardwareInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (string flow in new[] { "Render", "Capture" })
+        {
+            foreach (EndpointHwEntry e in ReadHardwareIndex(flow))
+            {
+                if (e.State != AudioDevice.StateActive) continue;
+                string endpointId = BuildEndpointId(flow, e.Id);
+                map[endpointId] = new ActiveHardwareInfo(flow, e.Id, endpointId, e.Hw, e.Wave, e.Name);
+            }
+        }
+        return map;
+    }
+
+    private sealed record EndpointHwEntry(string Id, int State, string Name, string Hw, string Wave);
 
     private static List<EndpointHwEntry> ReadHardwareIndex(string flow)
     {
@@ -335,11 +386,17 @@ public static class AudioRegistryService
 
         foreach (string sub in fk.GetSubKeyNames())
         {
-            using RegistryKey? pk = fk.OpenSubKey($@"{sub}\Properties");
+            using RegistryKey? devKey = fk.OpenSubKey(sub);
+            if (devKey is null) continue;
+            int state = devKey.GetValue("DeviceState") is int s ? s : 0;
+
+            using RegistryKey? pk = devKey.OpenSubKey("Properties");
             if (pk is null) continue;
+
+            string name = pk.GetValue(KeyName) as string ?? string.Empty;
             string hw = pk.GetValue(KeyHardwarePath) as string ?? string.Empty;
             string wave = pk.GetValue(KeyWaveId) as string ?? string.Empty;
-            list.Add(new EndpointHwEntry(sub, hw, wave));
+            list.Add(new EndpointHwEntry(sub, state, name, hw, wave));
         }
 
         return list;
@@ -352,27 +409,95 @@ public static class AudioRegistryService
         return res?.Id;
     }
 
-    private static (string Id, string How)? ResolveEndpoint(
+    /// <summary>
+    /// Resolves a backup record to the real endpoint GUID, prioritizing ACTIVE endpoints and specific
+    /// Wave hardware pins (e.g. NVIDIA wave08) over shared parent Hw paths or dead NotPresent ghosts.
+    /// </summary>
+    private static (string Id, string How, bool IsActive)? ResolveEndpoint(
         DeviceBackup b,
         List<EndpointHwEntry> renderList,
         List<EndpointHwEntry> captureList)
     {
-        using (RegistryKey? direct = Registry.LocalMachine.OpenSubKey(PropertiesPath(b.Flow, b.Id)))
-        {
-            if (direct is not null) return (b.Id, "direct");
-        }
-
         var list = string.Equals(b.Flow, "Render", StringComparison.OrdinalIgnoreCase) ? renderList : captureList;
-        if (!string.IsNullOrEmpty(b.Hw))
+
+        EndpointHwEntry? direct = list.FirstOrDefault(e => string.Equals(e.Id, b.Id, StringComparison.OrdinalIgnoreCase));
+
+        // 1. Direct GUID match that is currently ACTIVE
+        if (direct is not null && direct.State == AudioDevice.StateActive)
         {
-            EndpointHwEntry? hit = list.FirstOrDefault(e => string.Equals(e.Hw, b.Hw, StringComparison.OrdinalIgnoreCase));
-            if (hit is not null) return (hit.Id, "hw");
+            return (direct.Id, "direct", true);
         }
 
+        // 2. ACTIVE endpoint matching the exact Wave pin (survives NVIDIA/HDMI/DP GUID regeneration even when old GUID stays as a dead ghost)
         if (!string.IsNullOrEmpty(b.Wave))
         {
-            EndpointHwEntry? hit = list.FirstOrDefault(e => string.Equals(e.Wave, b.Wave, StringComparison.OrdinalIgnoreCase));
-            if (hit is not null) return (hit.Id, "wave");
+            EndpointHwEntry? activeWave = list.FirstOrDefault(e =>
+                e.State == AudioDevice.StateActive &&
+                string.Equals(e.Wave, b.Wave, StringComparison.OrdinalIgnoreCase));
+            if (activeWave is not null)
+            {
+                return (activeWave.Id, "wave-active", true);
+            }
+        }
+
+        // 3. ACTIVE endpoint matching Hw (when unique or matching Name)
+        if (!string.IsNullOrEmpty(b.Hw))
+        {
+            var activeHw = list.Where(e =>
+                e.State == AudioDevice.StateActive &&
+                string.Equals(e.Hw, b.Hw, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            if (activeHw.Count == 1)
+            {
+                return (activeHw[0].Id, "hw-active", true);
+            }
+
+            if (activeHw.Count > 1 && !string.IsNullOrEmpty(b.Name))
+            {
+                EndpointHwEntry? named = activeHw.FirstOrDefault(e =>
+                    string.Equals(e.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                if (named is not null)
+                {
+                    return (named.Id, "hw-name-active", true);
+                }
+            }
+        }
+
+        // 4. Non-active direct GUID (e.g., unplugged Bluetooth headset)
+        if (direct is not null)
+        {
+            return (direct.Id, "direct-inactive", false);
+        }
+
+        // 5. Non-active exact Wave match (prefer Unplugged/Disabled over dead NotPresent ghosts)
+        if (!string.IsNullOrEmpty(b.Wave))
+        {
+            EndpointHwEntry? waveHit = list
+                .Where(e => string.Equals(e.Wave, b.Wave, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(e => e.State is AudioDevice.StateUnplugged or AudioDevice.StateDisabled ? 0 : 1)
+                .FirstOrDefault();
+            if (waveHit is not null)
+            {
+                return (waveHit.Id, "wave-inactive", false);
+            }
+        }
+
+        // 6. Non-active Hw match (prefer matching Name and Unplugged/Disabled)
+        if (!string.IsNullOrEmpty(b.Hw))
+        {
+            var hwHits = list
+                .Where(e => string.Equals(e.Hw, b.Hw, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(e => e.State is AudioDevice.StateUnplugged or AudioDevice.StateDisabled ? 0 : 1)
+                .ToList();
+
+            EndpointHwEntry? hit = hwHits.FirstOrDefault(e =>
+                !string.IsNullOrEmpty(b.Name) && string.Equals(e.Name, b.Name, StringComparison.OrdinalIgnoreCase))
+                ?? (hwHits.Count == 1 ? hwHits[0] : null);
+
+            if (hit is not null)
+            {
+                return (hit.Id, "hw-inactive", false);
+            }
         }
 
         return null;

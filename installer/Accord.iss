@@ -1,5 +1,5 @@
 #define AppName "Accord"
-#define AppVersion "2.0.1"
+#define AppVersion "2.0.2"
 #define AppPublisher "Accord"
 #define AppExeName "Accord.exe"
 #define PublishDir "..\publish"

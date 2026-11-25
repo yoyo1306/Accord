@@ -142,23 +142,91 @@ public sealed class AudioSwitcherEngine
         if (backups.Count == 0) return;
 
         List<LiveAudioEndpoint> devices = AudioCoreCom.ListActiveEndpoints();
+        Dictionary<string, AudioRegistryService.ActiveHardwareInfo>? hwMap = null;
         DateTime now = DateTime.UtcNow;
+        bool backupSelfHealed = false;
+        var handledEndpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (DeviceBackup rec in backups)
+        // Iterate newest-first so latest entry wins if legacy duplicates exist for the same Wave pin
+        for (int i = backups.Count - 1; i >= 0; i--)
         {
+            DeviceBackup rec = backups[i];
             if (string.IsNullOrEmpty(rec.Id) || rec.IsHandsFree) continue;
+
+            string expectedFlowLabel = string.Equals(rec.Flow, "Render", StringComparison.OrdinalIgnoreCase) ? "Playback" : "Recording";
             string fullId = rec.EndpointId;
-            LiveAudioEndpoint? live = devices.FirstOrDefault(d => string.Equals(d.Id, fullId, StringComparison.OrdinalIgnoreCase));
+
+            LiveAudioEndpoint? live = devices.FirstOrDefault(d =>
+                string.Equals(d.Id, fullId, StringComparison.OrdinalIgnoreCase));
+
+            bool resolvedViaHardware = false;
+            string? resolvedRawId = null;
+
+            // Fallback when Windows/NVIDIA regenerates the endpoint GUID (e.g. DisplayPort/HDMI wave08)
+            if (live is null && (!string.IsNullOrEmpty(rec.Wave) || !string.IsNullOrEmpty(rec.Hw)))
+            {
+                hwMap ??= AudioRegistryService.ReadActiveHardwareMap();
+
+                AudioRegistryService.ActiveHardwareInfo? hwHit = null;
+                if (!string.IsNullOrEmpty(rec.Wave))
+                {
+                    hwHit = hwMap.Values.FirstOrDefault(h =>
+                        string.Equals(h.Flow, rec.Flow, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(h.Wave, rec.Wave, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (hwHit is null && !string.IsNullOrEmpty(rec.Hw))
+                {
+                    var sameHw = hwMap.Values.Where(h =>
+                        string.Equals(h.Flow, rec.Flow, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(h.Hw, rec.Hw, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                    hwHit = sameHw.Count == 1
+                        ? sameHw[0]
+                        : sameHw.FirstOrDefault(h =>
+                            !string.IsNullOrEmpty(rec.Name) &&
+                            string.Equals(h.Name, rec.Name, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (hwHit is not null)
+                {
+                    live = devices.FirstOrDefault(d =>
+                        d.Flow == expectedFlowLabel &&
+                        string.Equals(d.Id, hwHit.EndpointId, StringComparison.OrdinalIgnoreCase));
+                    if (live is not null)
+                    {
+                        resolvedViaHardware = true;
+                        resolvedRawId = hwHit.RawId;
+                    }
+                }
+            }
+
             if (live is null) continue;
+
+            if (!handledEndpoints.Add(live.Id))
+            {
+                // Remove stale duplicate backup that maps to the same live endpoint
+                backups.RemoveAt(i);
+                backupSelfHealed = true;
+                continue;
+            }
+
+            if (resolvedViaHardware && !string.IsNullOrEmpty(resolvedRawId) &&
+                !string.Equals(rec.Id, resolvedRawId, StringComparison.OrdinalIgnoreCase))
+            {
+                log?.Invoke($"GUID mis à jour ({rec.Flow} {rec.Name}) : {rec.Id} -> {resolvedRawId}");
+                rec.Id = resolvedRawId;
+                backupSelfHealed = true;
+            }
 
             string want = rec.SavedDisplay;
             if (string.IsNullOrEmpty(want) || string.Equals(live.Name, want, StringComparison.Ordinal))
             {
-                _nameRepairCooldown.Remove(fullId);
+                _nameRepairCooldown.Remove(live.Id);
                 continue;
             }
 
-            if (_nameRepairCooldown.TryGetValue(fullId, out DateTime until) && now < until)
+            if (_nameRepairCooldown.TryGetValue(live.Id, out DateTime until) && now < until)
             {
                 continue;
             }
@@ -168,15 +236,20 @@ public sealed class AudioSwitcherEngine
 
             try
             {
-                AudioCoreCom.SetInterfaceName(fullId, label);
+                AudioCoreCom.SetInterfaceName(live.Id, label);
                 log?.Invoke($"Nom réparé ({rec.Flow}) {live.Name} -> {want}");
-                _nameRepairCooldown.Remove(fullId);
+                _nameRepairCooldown.Remove(live.Id);
             }
             catch (Exception ex)
             {
                 log?.Invoke($"Échec réparation nom ({rec.Flow} {rec.Id}) : {ex.Message}");
-                _nameRepairCooldown[fullId] = now.AddSeconds(30);
+                _nameRepairCooldown[live.Id] = now.AddSeconds(30);
             }
+        }
+
+        if (backupSelfHealed)
+        {
+            try { BackupStore.SaveAll(backups); } catch { }
         }
     }
 

@@ -662,7 +662,7 @@ public sealed partial class MainWindow : Window
                 ? "Déjà défini par défaut"
                 : "Définir comme périphérique par défaut";
 
-            DeviceBackup? bkp = BackupStore.Find(device.Flow, device.Id);
+            DeviceBackup? bkp = BackupStore.Find(device.Flow, device.Id, device.WaveId);
             device.HasBackup = bkp is not null;
             RestoreButton.IsEnabled = bkp is not null && !_isBusy;
             BackupButton.IsEnabled = !_isBusy;
@@ -1044,7 +1044,7 @@ public sealed partial class MainWindow : Window
         AudioDevice? device = GetSelectedDevice();
         if (device is null) return;
 
-        DeviceBackup? backup = BackupStore.Find(device.Flow, device.Id);
+        DeviceBackup? backup = BackupStore.Find(device.Flow, device.Id, device.WaveId);
         if (backup is null)
         {
             SetStatus("Aucune sauvegarde pour cet appareil.", StatusKind.Warning);

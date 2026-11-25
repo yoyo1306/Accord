@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.2 — 2026-11-25
+
+### Correctifs
+- **Résolution fiable des sorties HDMI/DisplayPort NVIDIA (`Philips Evnia`)** :
+  - Priorisation stricte des périphériques **actifs** (`DeviceState = 1`) et du chemin matériel spécifique **`Wave`** (ex. `wave08`) avant le chemin parent **`Hw`** partagé par toutes les sorties du GPU (évite de restaurer un ancien périphérique fantôme `State = 4` après régénération du GUID Windows/NVIDIA).
+  - **Auto-cicatrisation du GUID** : lors de la restauration au démarrage (`Accord.Admin`) et de la surveillance en direct (`Accord.Watcher`), toute bascule de GUID sur le même `Wave` met automatiquement à jour `Accord.backup.txt`, répare le nom dans `mmsys.cpl` sous 2 secondes et déduplique les anciennes entrées.
+  - L'interface reconnaît désormais la sauvegarde par `(Flow, Id)` ou `(Flow, Wave)` afin d'éviter la perte apparente du badge « Sauvé » et l'accumulation de doublons.
+
 ## 2.0.1 — 2026-11-23
 
 ### Correctifs

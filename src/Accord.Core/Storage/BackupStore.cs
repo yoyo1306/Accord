@@ -65,31 +65,68 @@ public static class BackupStore
         return list;
     }
 
-    public static DeviceBackup? Find(string flow, string id, string? customPath = null)
+    public static DeviceBackup? Find(string flow, string id, string? wave = null, string? customPath = null)
     {
-        foreach (DeviceBackup item in Load(customPath))
+        List<DeviceBackup> all = Load(customPath);
+
+        // 1. Exact Flow + GUID match (prefer latest if duplicates exist)
+        for (int i = all.Count - 1; i >= 0; i--)
         {
+            DeviceBackup item = all[i];
             if (string.Equals(item.Flow, flow, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase))
             {
                 return item;
             }
         }
+
+        // 2. Fallback: exact Flow + Wave hardware pin match (survives NVIDIA/HDMI/DP GUID regeneration)
+        if (!string.IsNullOrWhiteSpace(wave))
+        {
+            for (int i = all.Count - 1; i >= 0; i--)
+            {
+                DeviceBackup item = all[i];
+                if (string.Equals(item.Flow, flow, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(item.Wave) &&
+                    string.Equals(item.Wave, wave, StringComparison.OrdinalIgnoreCase))
+                {
+                    return item;
+                }
+            }
+        }
+
         return null;
     }
 
-    public static bool Exists(string flow, string id, string? customPath = null) =>
-        Find(flow, id, customPath) is not null;
+    public static bool Exists(string flow, string id, string? wave = null, string? customPath = null) =>
+        Find(flow, id, wave, customPath) is not null;
 
     public static void Save(DeviceBackup backup, string? customPath = null)
     {
         string path = customPath ?? FilePath;
         List<DeviceBackup> all = Load(path);
-        int idx = all.FindIndex(x =>
-            string.Equals(x.Flow, backup.Flow, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(x.Id, backup.Id, StringComparison.OrdinalIgnoreCase));
 
-        if (idx >= 0) all[idx] = backup;
+        // Remove any prior entries for the same (Flow, Id) or same physical (Flow, Wave) pin
+        // so GUID regeneration never accumulates stale duplicates.
+        int firstMatch = -1;
+        for (int i = all.Count - 1; i >= 0; i--)
+        {
+            DeviceBackup existing = all[i];
+            bool sameFlow = string.Equals(existing.Flow, backup.Flow, StringComparison.OrdinalIgnoreCase);
+            bool sameId = sameFlow && string.Equals(existing.Id, backup.Id, StringComparison.OrdinalIgnoreCase);
+            bool sameWave = sameFlow &&
+                            !string.IsNullOrWhiteSpace(backup.Wave) &&
+                            !string.IsNullOrWhiteSpace(existing.Wave) &&
+                            string.Equals(existing.Wave, backup.Wave, StringComparison.OrdinalIgnoreCase);
+
+            if (sameId || sameWave)
+            {
+                firstMatch = i;
+                all.RemoveAt(i);
+            }
+        }
+
+        if (firstMatch >= 0 && firstMatch <= all.Count) all.Insert(firstMatch, backup);
         else all.Add(backup);
 
         SaveAll(all, path);
@@ -121,7 +158,7 @@ public static class BackupStore
             sb.AppendLine("---");
         }
 
-        string tmp = path + ".tmp";
+        string tmp = $"{path}.{Environment.ProcessId}.tmp";
         File.WriteAllText(tmp, sb.ToString(), new UTF8Encoding(false));
         File.Move(tmp, path, overwrite: true);
     }
